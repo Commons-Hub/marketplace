@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RFID User Tap Counts</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f3f4f6;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+        flex-direction: column;
+      }
+      .container {
+        background-color: white;
+        padding: 2.5rem;
+        border-radius: 1rem;
+        box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        max-width: 600px; /* Adjusted max-width */
+        text-align: center;
+      }
+      h1 {
+        color: #1f2937;
+        margin-bottom: 2rem;
+        font-weight: 700;
+        font-size: 2.5rem;
+      }
+      .user-list {
+        max-height: 60vh; /* Limit height for scrollability */
+        overflow-y: auto; /* Enable scrolling */
+        padding-right: 10px; /* Space for scrollbar */
+      }
+      .user-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #e5e7eb;
+        font-size: 1.125rem; /* md:text-lg equivalent */
+      }
+      .user-list-item:last-child {
+        border-bottom: none;
+      }
+      .user-name {
+        font-weight: 600;
+        color: #1f2937;
+        text-align: left;
+        flex-grow: 1; /* Allows name to take up space */
+      }
+      .user-count {
+        font-size: 1.75rem; /* text-3xl equivalent */
+        font-weight: 700;
+        color: #007bff; /* Vibrant blue */
+        min-width: 50px; /* Ensure space for count */
+        text-align: right;
+      }
+      .instructions {
+        margin-top: 1.5rem;
+        color: #666;
+        font-size: 0.9rem;
+      }
+      #noUsersMessage {
+        color: #4b5563;
+        padding: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mx-auto p-8 bg-white rounded-xl shadow-lg">
+      <h1>Commons Hub Token</h1>
+
+      <div id="userList" class="user-list">
+        <p class="text-center text-gray-500" id="noUsersMessage">
+          No users found. Tap a card or add users via the
+          <a href="admin.html" class="text-blue-500 hover:underline"
+            >admin panel</a
+          >!
+        </p>
+      </div>
+
+      <p class="instructions">
+        Tap your bracelet against the reader to receive the proof of CHUB!
+      </p>
+    </div>
+
+    <script>
+      const userListDiv = document.getElementById("userList");
+      const noUsersMessage = document.getElementById("noUsersMessage");
+
+      let users = []; // This will hold all user data
+
+      // --- Render Function ---
+      function renderUserList() {
+        userListDiv.innerHTML = ""; // Clear existing list
+        if (users.length === 0) {
+          noUsersMessage.style.display = "block";
+          return;
+        }
+        noUsersMessage.style.display = "none"; // Hide "no users" message
+
+        // Sort users by tap count in descending order
+        users.sort((a, b) => b.tapCount - a.tapCount);
+
+        users.forEach((user) => {
+          const userItem = document.createElement("div");
+          userItem.className = "user-list-item";
+          userItem.innerHTML = `
+                    <div class="user-name">${user.name}</div>
+                    <div class="user-count">${user.balance || 0} CHUB</div>
+                `;
+          userListDiv.appendChild(userItem);
+        });
+      }
+
+      // --- Initial Data Fetch ---
+      async function fetchData() {
+        try {
+          const response = await fetch("/api/data"); // Use the /api/data endpoint
+          if (!response.ok)
+            throw new Error(`HTTP error! status: ${response.status}`);
+          const data = await response.json();
+          users = data.users; // Get all users
+          renderUserList();
+        } catch (error) {
+          console.error("Error fetching initial data:", error);
+          userListDiv.innerHTML = `<p class="text-red-500">Error loading data. Please try again.</p>`;
+        }
+      }
+
+      // --- WebSocket Connection ---
+      let domain = window.location.hostname;
+      if (domain === "localhost") {
+        domain += ":3000";
+      }
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${wsProtocol}//${domain}`;
+
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log("Connected to WebSocket server for user updates.");
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "fullStateUpdate") {
+          // Listen for the 'fullStateUpdate' from server
+          console.log("Received full state update:", data);
+          users = data.users; // Update local users array
+          renderUserList(); // Re-render the list
+        }
+      };
+
+      ws.onclose = () => {
+        console.log(
+          "Disconnected from WebSocket server. Attempting to reconnect in 5 seconds..."
+        );
+        setTimeout(() => {
+          // For simplicity, a page reload helps re-establish connection
+          window.location.reload();
+        }, 5000);
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        // Optionally display a message to the user about connection issues
+      };
+
+      // Fetch initial data when the page loads
+      fetchData();
+    </script>
+  </body>
+</html>

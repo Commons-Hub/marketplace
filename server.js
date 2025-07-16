@@ -1,0 +1,295 @@
+const express = require("express");
+const ethers = require("ethers");
+const WebSocket = require("ws");
+const fs = require("fs").promises; // For asynchronous file operations
+const path = require("path"); // For path manipulation
+const citizenWallet = require("@citizenwallet/sdk");
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Path to our users data file
+const USERS_FILE = path.join(__dirname, "users.json");
+
+const COMMUNITY_FILE = path.join(__dirname, "community.json");
+let community;
+
+// Global variable to hold our application state
+let appState = {
+  users: [],
+  lastTappedUid: "",
+};
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// Serve static files from the 'public' directory
+app.use(express.static("public"));
+
+// --- Data Loading and Saving Functions ---
+
+// Loads data from users.json, or initializes if not found
+async function loadData() {
+  try {
+    const data = await fs.readFile(USERS_FILE, "utf8");
+    appState = JSON.parse(data);
+    console.log("Data loaded from users.json.");
+
+    const communityData = await fs.readFile(COMMUNITY_FILE, "utf8");
+    const communityJSON = JSON.parse(communityData);
+    community = new citizenWallet.CommunityConfig(communityJSON);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      // File not found, initialize with default empty state
+      console.warn(
+        "users.json not found, creating a new one with default state."
+      );
+      await saveData(); // Save the default state
+    } else {
+      console.error("Error loading data from users.json:", error);
+      // If parsing fails, revert to default state to prevent app crash
+      appState = { users: [], lastTappedUid: "" };
+      await saveData(); // Attempt to save default state
+    }
+  }
+}
+
+// Saves current appState to users.json
+async function saveData() {
+  try {
+    await fs.writeFile(USERS_FILE, JSON.stringify(appState, null, 2), "utf8");
+    console.log("Data saved to users.json.");
+  } catch (error) {
+    console.error("Error saving data to users.json:", error);
+  }
+}
+
+function getServerSigner() {
+  const privateKey = process.env.CARD_MANAGER_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("Private key is not set");
+  }
+
+  const signer = new ethers.Wallet(privateKey);
+
+  return signer;
+}
+
+async function getServerAccountAddress() {
+  const signer = getServerSigner();
+
+  const signerAccountAddress = await citizenWallet.getAccountAddress(
+    community,
+    signer.address
+  );
+
+  return signerAccountAddress;
+}
+
+// --- WebSocket Server for Real-time Updates ---
+const server = app.listen(port, async () => {
+  console.log(`Glitch web server listening on port ${port}`);
+  console.log(
+    `Access your app at: https://${process.env.PROJECT_DOMAIN}.glitch.me`
+  );
+  await loadData(); // Load data when the server starts
+});
+
+const wss = new WebSocket.Server({ server });
+
+wss.on("connection", (ws) => {
+  console.log("WebSocket client connected.");
+  // Send initial data to newly connected clients
+  sendFullStateToClient(ws);
+});
+
+wss.on("error", (error) => {
+  console.error("WebSocket server error:", error);
+});
+
+// Function to send the full state (users and lastTappedUid) to a client
+function sendFullStateToClient(ws) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(
+      JSON.stringify({
+        type: "fullStateUpdate",
+        users: appState.users,
+        lastTappedUid: appState.lastTappedUid,
+      })
+    );
+  }
+}
+
+// Function to broadcast full state to all connected WebSocket clients
+function broadcastFullState() {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      sendFullStateToClient(client);
+    }
+  });
+}
+
+// --- API Endpoints ---
+
+// GET /api/data - Get all users and lastTappedUid
+app.get("/api/data", async (req, res) => {
+  const users = [];
+
+  for (const user of appState.users) {
+    const hashedSerialNumber = ethers.id(user.rfidUid);
+    const address = await citizenWallet.getCardAddress(
+      community,
+      hashedSerialNumber
+    );
+    const balance = await citizenWallet.getAccountBalance(community, address);
+    users.push({ ...user, address, balance: Number(balance) });
+  }
+  res.json({ users: users, lastTappedUid: appState.lastTappedUid });
+});
+
+// POST /api/tap - Handle RFID tap from NodeMCU
+app.post("/api/tap", async (req, res) => {
+  const { uid } = req.body; // Expecting { "uid": "CARD_UID_HEX" }
+
+  if (!uid) {
+    return res.status(400).json({ error: "Missing UID in request body" });
+  }
+
+  console.log(`Received tap for UID: ${uid}`);
+
+  let userFound = false;
+  let userToUpdate = appState.users.find((u) => u.rfidUid === uid);
+
+  if (userToUpdate) {
+    const amount = 5;
+
+    userToUpdate.tapCount = (userToUpdate.tapCount || 0) + amount;
+    console.log(
+      `Incremented tap count for user ${userToUpdate.name} (UID: ${uid}). New count: ${userToUpdate.tapCount}`
+    );
+    userFound = true;
+
+    const signer = getServerSigner();
+
+    const bundler = new citizenWallet.BundlerService(community);
+
+    const accountAddress = await getServerAccountAddress();
+
+    const cardAddress = await citizenWallet.getCardAddress(
+      community,
+      ethers.id(userToUpdate.rfidUid)
+    );
+
+    await bundler.mintERC20Token(
+      signer, // the private key
+      community.primaryToken.address, // the token's address
+      accountAddress, // the account initiating (needs minter role)
+      cardAddress, // who should it go to
+      `${amount}` // decimal conversion happens within, just use normal amount
+    );
+  } else {
+    console.log(`No user found for UID: ${uid}.`);
+  }
+
+  // Update lastTappedUid in global state
+  appState.lastTappedUid = uid;
+  console.log(`Updated lastTappedUid to: ${uid}`);
+
+  await saveData(); // Save the updated state
+  broadcastFullState(); // Broadcast the updated state to all clients
+
+  res.status(200).json({
+    message: userFound ? "Tap recorded" : "UID not assigned to any user",
+    uid: uid,
+  });
+});
+
+// POST /api/add-user - Add a new user
+app.post("/api/add-user", async (req, res) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: "Missing user name" });
+  }
+
+  // Generate a simple unique ID for the user
+  const newUserId = `user_${Date.now()}`; // Basic unique ID
+
+  const newUser = {
+    id: newUserId,
+    name: name,
+    rfidUid: "", // Initially no card assigned
+    tapCount: 0,
+  };
+
+  appState.users.push(newUser);
+  console.log(`Added new user: ${name} with ID: ${newUserId}`);
+
+  await saveData(); // Save the updated state
+  broadcastFullState(); // Broadcast update to all clients
+  res.status(201).json({ message: "User added", id: newUserId });
+});
+
+// POST /api/assign-card - Assign an RFID UID to a user
+app.post("/api/assign-card", async (req, res) => {
+  const { userId, uid } = req.body;
+
+  if (!userId || !uid) {
+    return res.status(400).json({ error: "Missing userId or UID" });
+  }
+
+  const userToAssign = appState.users.find((u) => u.id === userId);
+
+  if (userToAssign) {
+    // Optional: Remove UID from any other user it might be assigned to
+    appState.users.forEach((u) => {
+      if (u.rfidUid === uid && u.id !== userId) {
+        u.rfidUid = ""; // Unassign from previous user
+        console.log(`Unassigned UID ${uid} from user ${u.name}`);
+      }
+    });
+    userToAssign.rfidUid = uid;
+    console.log(
+      `Assigned UID ${uid} to user ID: ${userId} (${userToAssign.name})`
+    );
+    await saveData(); // Save the updated state
+    broadcastFullState(); // Broadcast update to all clients
+    res.status(200).json({ message: "Card assigned" });
+  } else {
+    res.status(404).json({ error: "User not found" });
+  }
+});
+
+// DELETE /api/users/:userId - Delete a user
+app.delete("/api/users/:userId", async (req, res) => {
+  const userIdToDelete = req.params.userId;
+
+  // Find the index of the user to delete
+  const userIndex = appState.users.findIndex((u) => u.id === userIdToDelete);
+
+  if (userIndex === -1) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const deletedUser = appState.users.splice(userIndex, 1); // Remove the user from the array
+  console.log(`Deleted user: ${deletedUser[0].name} (ID: ${userIdToDelete})`);
+
+  await saveData(); // Save the updated state
+  broadcastFullState(); // Broadcast update to all clients
+
+  res
+    .status(200)
+    .json({ message: "User deleted successfully", userId: userIdToDelete });
+});
+
+// POST /api/reset-all-counts - Reset all user tap counts
+app.post("/api/reset-all-counts", async (req, res) => {
+  appState.users.forEach((user) => {
+    user.tapCount = 0;
+  });
+  console.log("All user tap counts reset.");
+
+  await saveData(); // Save the updated state
+  broadcastFullState(); // Broadcast update to all clients
+  res.status(200).json({ message: "All counts reset" });
+});
