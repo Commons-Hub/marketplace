@@ -1,0 +1,82 @@
+{
+  "community": {
+    "name": "Commons Hub Austria",
+    "description": "Tokens for Commons Hub Austria",
+    "url": "https://commons-hub.at",
+    "alias": "chub",
+    "logo": "https://assets.citizenwallet.xyz/wallet-config/_images/chub.png",
+    "custom_domain": null,
+    "hidden": false,
+    "theme": {
+      "primary": "#3331c4"
+    },
+    "profile": {
+      "address": "0x5298118165341FBd25f6E6Fe318906574ffD4560",
+      "chain_id": 100
+    },
+    "primary_token": {
+      "address": "0x769aEc1C7F12344Ce6f2b026Ceca558d36701AC4",
+      "chain_id": 100
+    },
+    "primary_account_factory": {
+      "address": "0x940Cbb155161dc0C4aade27a4826a16Ed8ca0cb2",
+      "chain_id": 100
+    },
+    "primary_card_manager": {
+      "address": "0xBA861e2DABd8316cf11Ae7CdA101d110CF581f28",
+      "chain_id": 100
+    }
+  },
+  "tokens": {
+    "100:0x769aEc1C7F12344Ce6f2b026Ceca558d36701AC4": {
+      "standard": "erc20",
+      "name": "Commons Hub Austria",
+      "address": "0x769aEc1C7F12344Ce6f2b026Ceca558d36701AC4",
+      "symbol": "CHUB",
+      "decimals": 6,
+      "chain_id": 100
+    }
+  },
+  "scan": {
+    "url": "https://gnosisscan.io",
+    "name": "Gnosis Explorer"
+  },
+  "accounts": {
+    "100:0x940Cbb155161dc0C4aade27a4826a16Ed8ca0cb2": {
+      "chain_id": 100,
+      "entrypoint_address": "0x7079253c0358eF9Fd87E16488299Ef6e06F403B6",
+      "paymaster_address": "0x5d8782F9eb424A84fa1e3A7B902De2E491C7b629",
+      "account_factory_address": "0x940Cbb155161dc0C4aade27a4826a16Ed8ca0cb2",
+      "paymaster_type": "cw-safe"
+    }
+  },
+  "cards": {
+    "100:0xBA861e2DABd8316cf11Ae7CdA101d110CF581f28": {
+      "chain_id": 100,
+      "instance_id": "commons-hub-test",
+      "address": "0xBA861e2DABd8316cf11Ae7CdA101d110CF581f28",
+      "type": "safe"
+    }
+  },
+  "chains": {
+    "100": {
+      "id": 100,
+      "node": {
+        "url": "https://100.engine.citizenwallet.xyz",
+        "ws_url": "wss://100.engine.citizenwallet.xyz"
+      }
+    }
+  },
+  "ipfs": {
+    "url": "https://ipfs.internal.citizenwallet.xyz"
+  },
+  "plugins": [
+    {
+      "name": "About",
+      "icon": "https://assets.citizenwallet.xyz/wallet-config/_images/chub.png",
+      "url": "https://commons-hub.at"
+    }
+  ],
+  "config_location": "https://config.internal.citizenwallet.xyz/v4/chub.json",
+  "version": 4
+}

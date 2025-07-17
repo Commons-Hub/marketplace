@@ -1,0 +1,32 @@
+{
+  "name": "glitch-hello-node",
+  "version": "0.1.0",
+  "description": "A simple Node app built on fastify, instantly up and running. Built to be remixed on Glitch.com.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "configure": "node scripts/configure-provider.js"
+  },
+  "dependencies": {
+    "@citizenwallet/sdk": "^2.0.111",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/static": "^8.2.0",
+    "@fastify/view": "^11.1.0",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0",
+    "fastify": "^5.4.0",
+    "handlebars": "^4.7.8",
+    "ws": "^8.18.2"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "repository": {
+    "url": "https://github.com/Commons-Hub/marketplace.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "node",
+    "commons-hub"
+  ]
+}
